@@ -1,204 +1,265 @@
-#!/usr/bin/env python
-
 import random
 from collections import defaultdict
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Protocol
 
-def add_one(x1, x2):
-    if x1 == None:
-        return False
-    return x1 + 1 == x2
-
-
-def same(x1, x2):
-    return x1 == x2
+import numpy
+from scipy.stats import pearsonr
+from tqdm import tqdm
 
 
-class Deck(object):
-    def __init__(self):
-        pass
+@dataclass
+class Card:
+    features: dict[str, str | int]
 
-    def features(self):
-        pass
+    @property
+    def content_id(self) -> int:
+        return hash(str(self.features))
 
-    def expanded_features(self):
-        return self.features()
 
-    def measure_uniformity(self, verbose=False):
-        feature_uniformity = defaultdict(int)
-        for feature in self.features():
+class Deck(Protocol):
+    name: str
+
+    def features(self) -> list[str]: ...
+
+    def cards(self) -> list[Card]: ...
+
+
+def measure_uniformity(cards: list[Card], features: list[str], verbose: bool = False) -> dict[str, float]:
+    feature_uniformity = {}
+    for feature in features:
+        if verbose:
+            print(feature)
+        last_seen = defaultdict(int)
+        distances = defaultdict(list)
+        counts = defaultdict(int)
+        for i, c in enumerate(cards):
+            feature_value = c.features[feature]
+            counts[feature_value] += 1
+            if feature_value in last_seen:
+                distance = i - last_seen[feature_value]
+                distances[feature_value].append(distance)
+            last_seen[feature_value] = i
+        for f in distances:
             if verbose:
-                print feature
-            last_seen = defaultdict(int)
-            distances = defaultdict(list)
-            counts = defaultdict(int)
-            for i, c in enumerate(self.cards):
-                feature_value = c[feature]
-                counts[feature_value] += 1
-                if feature_value in last_seen:
-                    distance = i - last_seen[feature_value]
-                    distances[feature_value].append(distance)
-                last_seen[feature_value] = i
-            for f in distances:
-                if verbose:
-                    print f, distances[f], len(self.cards) / counts[f]
-                distances[f] = [float(x) * counts[f] / len(self.cards)
-                        for x in distances[f]]
-            ave_distances = dict()
-            max_ave = float('-inf')
-            min_ave = float('inf')
-            averaged_ave = 0
-            weighted_average = 0
-            for f in distances:
-                ave_distance = sum(distances[f]) / len(distances[f])
-                if ave_distance > max_ave:
-                    max_ave = ave_distance
-                if ave_distance < min_ave:
-                    min_ave = ave_distance
-                averaged_ave += ave_distance
-                weighted_average += ave_distance * counts[f]
-            averaged_ave /= len(distances)
-            weighted_average /= len(self.cards)
-            if verbose:
-                print 'Weighted average distance:', weighted_average
-                print 'Feature-value averaged distance:', averaged_ave
-                print 'Max distance:', max_ave
-                print 'Min distance:', min_ave
-            feature_uniformity[feature] = weighted_average
-        return feature_uniformity
+                print(f, distances[f], len(cards) / counts[f])
+            distances[f] = [float(x) * counts[f] / len(cards) for x in distances[f]]
+        max_ave = float("-inf")
+        min_ave = float("inf")
+        averaged_ave = 0
+        weighted_average = 0
+        for f in distances:
+            ave_distance = sum(distances[f]) / len(distances[f])
+            if ave_distance > max_ave:
+                max_ave = ave_distance
+            if ave_distance < min_ave:
+                min_ave = ave_distance
+            averaged_ave += ave_distance
+            weighted_average += ave_distance * counts[f]
+        averaged_ave /= len(distances)
+        weighted_average /= len(cards)
+        if verbose:
+            print("Weighted average distance:", weighted_average)
+            print("Feature-value averaged distance:", averaged_ave)
+            print("Max distance:", max_ave)
+            print("Min distance:", min_ave)
+        feature_uniformity[feature] = weighted_average
+    return feature_uniformity
 
-    def measure_sequences(self, verbose=False):
-        last = dict()
-        sequences = defaultdict(list)
-        features = self.features()
-        if 'Number' in features:
-            features.append('Number-run')
-        for f in features:
-            last[f] = None
-        for c in self.cards:
-            if verbose:
-                print c
-            for f in features:
-                if f == 'Number-run':
-                    comp = add_one
-                    f_c = 'Number'
-                else:
-                    comp = same
-                    f_c = f
-                if not comp(last[f], c[f_c]):
-                    if verbose:
-                        print 'Feature %s not the same' % f
-                    sequences[f].append(0)
-                else:
-                    if verbose:
-                        print 'Feature %s the same' % f
-                last[f] = c[f_c]
-                sequences[f][-1] += 1
-        averages = defaultdict(int)
-        for f in sequences:
-            if verbose:
-                print sequences[f]
-            averages[f] = (float(sum(sequences[f])) / len(sequences[f]),
-                    float(max(sequences[f])))
-        return averages
+
+def pairwise_distances(cards: list[Card]) -> dict[tuple[int, int], int]:
+    distances = {}
+    for i, card1 in enumerate(cards):
+        for j, card2 in enumerate(cards):
+            card1_id = id(card1)
+            card2_id = id(card2)
+            distance = i - j
+            if card1_id > card2_id:
+                card1_id, card2_id = card2_id, card1_id
+                distance *= -1
+            distances[card1_id, card2_id] = distance
+    return distances
 
 
 class BohnanzaDeck(Deck):
-    def __init__(self):
-        self.name = 'Bohnanza Deck'
-        self.cards = []
-        for i in range(24):
-            self.cards.append({'Name': 'Coffee Bean'})
-        for i in range(22):
-            self.cards.append({'Name': 'Wax Bean'})
-        for i in range(20):
-            self.cards.append({'Name': 'Blue Bean'})
-        for i in range(18):
-            self.cards.append({'Name': 'Chili Bean'})
-        for i in range(16):
-            self.cards.append({'Name': 'Stink Bean'})
-        for i in range(14):
-            self.cards.append({'Name': 'Green Bean'})
-        for i in range(12):
-            self.cards.append({'Name': 'Soy Bean'})
-        for i in range(10):
-            self.cards.append({'Name': 'Black Eyed Bean'})
-        for i in range(8):
-            self.cards.append({'Name': 'Red Bean'})
+    def __init__(self) -> None:
+        self.name = "Bohnanza Deck"
+        self._cards: list[Card] = []
+        for _ in range(24):
+            self._cards.append(Card({"Name": "Coffee Bean"}))
+        for _ in range(22):
+            self._cards.append(Card({"Name": "Wax Bean"}))
+        for _ in range(20):
+            self._cards.append(Card({"Name": "Blue Bean"}))
+        for _ in range(18):
+            self._cards.append(Card({"Name": "Chili Bean"}))
+        for _ in range(16):
+            self._cards.append(Card({"Name": "Stink Bean"}))
+        for _ in range(14):
+            self._cards.append(Card({"Name": "Green Bean"}))
+        for _ in range(12):
+            self._cards.append(Card({"Name": "Soy Bean"}))
+        for _ in range(10):
+            self._cards.append(Card({"Name": "Black Eyed Bean"}))
+        for _ in range(8):
+            self._cards.append(Card({"Name": "Red Bean"}))
 
-    def features(self):
-        return ['Name']
+    def cards(self) -> list[Card]:
+        return self._cards
+
+    def features(self) -> list[str]:
+        return ["Name"]
 
 
 class PockerDeck(Deck):
-    def __init__(self):
-        self.name = 'Pocker Deck'
-        self.cards = []
-        for i in range(1,14):
-            self.cards.append({'Suit': 'Spades',
-                               'Color': 'Black',
-                               'Number': i})
-        for i in range(1,14):
-            self.cards.append({'Suit': 'Hearts',
-                               'Color': 'Red',
-                               'Number': i})
-        for i in range(1,14):
-            self.cards.append({'Suit': 'Clubs',
-                               'Color': 'Black',
-                               'Number': i})
-        for i in range(1,14):
-            self.cards.append({'Suit': 'Diamonds',
-                               'Color': 'Red',
-                               'Number': i})
+    def __init__(self) -> None:
+        self.name = "Pocker Deck"
+        self._cards = []
+        for i in range(1, 14):
+            self._cards.append(Card({"Suit": "Spades", "Color": "Black", "Number": i}))
+        for i in range(1, 14):
+            self._cards.append(Card({"Suit": "Hearts", "Color": "Red", "Number": i}))
+        for i in range(1, 14):
+            self._cards.append(Card({"Suit": "Clubs", "Color": "Black", "Number": i}))
+        for i in range(1, 14):
+            self._cards.append(Card({"Suit": "Diamonds", "Color": "Red", "Number": i}))
 
-    def features(self):
-        return ['Suit','Color','Number']
+    def cards(self) -> list[Card]:
+        return self._cards
 
-    def expanded_features(self):
-        return ['Suit','Color','Number', 'Number-run']
+    def features(self) -> list[str]:
+        return ["Suit", "Color", "Number"]
 
 
-def base_shuffle(deck):
-    random.shuffle(deck.cards)
+def base_shuffle(cards: list[Card]) -> list[Card]:
+    cards = list(cards)
+    random.shuffle(cards)
+    return cards
 
 
-def test_randomness(deck_cls, num_runs=1000, verbose=False):
+def perfect_shuffle(cards: list[Card]) -> list[Card]:
+    midpoint = len(cards) // 2
+    first_half = cards[:midpoint]
+    second_half = cards[midpoint:]
+    new_cards = []
+    for first_card, second_card in zip(first_half, second_half, strict=False):
+        if first_card:
+            new_cards.append(first_card)
+        if second_card:
+            new_cards.append(second_card)
+    return new_cards
+
+
+def imperfect_shuffle(cards: list[Card]) -> list[Card]:
+    midpoint_percent = random.randint(40, 60) / 100  # PARAMETER!
+    midpoint = int(len(cards) * midpoint_percent)
+    first_half = cards[:midpoint]
+    second_half = cards[midpoint:]
+    i = 0
+    j = 0
+    new_cards = []
+    while i < len(first_half) or j < len(second_half):
+        if i < len(first_half):
+            num_cards = random.randint(1, 4)  # PARAMETER!
+            new_cards.extend(first_half[i : min(len(first_half), i + num_cards)])
+            i = i + num_cards
+        if j < len(second_half):
+            num_cards = random.randint(1, 4)  # PARAMETER!
+            new_cards.extend(second_half[j : min(len(second_half), j + num_cards)])
+            j = j + num_cards
+    return new_cards
+
+
+def cut(cards: list[Card]) -> list[Card]:
+    midpoint_percent = random.randint(10, 40) / 100  # PARAMETER!
+    midpoint = int(len(cards) * midpoint_percent)
+    first_half = cards[:midpoint]
+    second_half = cards[midpoint:]
+    return second_half + first_half
+
+
+def multiple_shuffles(
+    shuffle_fn: Callable[[list[Card]], list[Card]],
+    num_shuffles: int,
+) -> Callable[[list[Card]], list[Card]]:
+    def composed_shuffle(cards: list[Card]) -> list[Card]:
+        for _ in range(num_shuffles):
+            cards = shuffle_fn(cards)
+        return cards
+
+    return composed_shuffle
+
+
+def compose_shuffles(
+    shuffle_fn1: Callable[[list[Card]], list[Card]],
+    shuffle_fn2: Callable[[list[Card]], list[Card]],
+) -> Callable[[list[Card]], list[Card]]:
+    def composed_shuffle(cards: list[Card]) -> list[Card]:
+        return shuffle_fn2(shuffle_fn1(cards))
+
+    return composed_shuffle
+
+
+def test_randomness(
+    deck_cls: type[Deck],
+    shuffle_fn: Callable[[list[Card]], list[Card]],
+    name: str,
+    num_runs: int = 1000,
+) -> None:
+    print(f"Testing {deck_cls.__name__} with shuffle_fn {name}")
     deck = deck_cls()
-    initial_uniformity = deck.measure_uniformity(verbose)
-    initial_sequences = deck.measure_sequences(verbose)
-    runs = defaultdict(list)
-    for i in range(num_runs):
-        base_shuffle(deck)
-        uniformity = deck.measure_uniformity(verbose)
-        sequences = deck.measure_sequences(verbose)
-        for f in deck.expanded_features():
-            runs[f].append((uniformity[f], sequences[f]))
-    print deck.name
-    print
-    for f in runs:
-        print '%s:' % f
-        print 'Uniformity:'
-        print '%15s: %6.3f' % ('Initial', initial_uniformity[f])
-        ave = sum(x[0] for x in runs[f]) / len(runs[f])
-        print '%15s: %6.3f' % ('base_shuffle', ave)
-        print 'Sequence Length:'
-        print '%15s: %6.3f (max: %5.2f)' % ('Initial', initial_sequences[f][0],
-                initial_sequences[f][1])
-        ave = sum(x[1][0] for x in runs[f]) / len(runs[f])
-        max = sum(x[1][1] for x in runs[f]) / len(runs[f])
-        print '%15s: %6.3f (max: %5.2f)' % ('base_shuffle', ave, max)
-        print
-    print '\n'
+    cards = deck.cards()
+    initial_distances = pairwise_distances(cards)
+    correlations = []
+    for _ in tqdm(range(num_runs)):
+        shuffled_cards = shuffle_fn(cards)
+        shuffled_distances = pairwise_distances(shuffled_cards)
+        assert initial_distances.keys() == shuffled_distances.keys()
+        before = []
+        after = []
+        for key in initial_distances:
+            before.append(initial_distances[key])
+            after.append(shuffled_distances[key])
+        correlations.append(pearsonr(numpy.array(before), numpy.array(after)))
+    average_correlation = sum(x.statistic for x in correlations) / len(correlations)
+    average_pvalue = sum(x.pvalue for x in correlations) / len(correlations)
+    print(average_correlation, average_pvalue)
 
 
-def main():
-    test_randomness(BohnanzaDeck)
-    test_randomness(PockerDeck)
-    #d = PockerDeck()
-    #base_shuffle(d)
-    #d.measure_sequences(verbose=True)
+def main() -> None:
+    test_randomness(PockerDeck, base_shuffle, "python shuffle")
+    print("\n\n")
+    test_randomness(PockerDeck, perfect_shuffle, "perfect shuffle")
+    test_randomness(PockerDeck, multiple_shuffles(perfect_shuffle, 2), "2 perfect shuffles")
+    test_randomness(PockerDeck, multiple_shuffles(perfect_shuffle, 3), "3 perfect shuffles")
+    test_randomness(PockerDeck, multiple_shuffles(perfect_shuffle, 4), "4 perfect shuffles")
+    test_randomness(PockerDeck, multiple_shuffles(perfect_shuffle, 5), "5 perfect shuffles")
+    test_randomness(PockerDeck, multiple_shuffles(perfect_shuffle, 6), "6 perfect shuffles")
+    test_randomness(PockerDeck, multiple_shuffles(perfect_shuffle, 7), "7 perfect shuffles")
+    test_randomness(PockerDeck, multiple_shuffles(perfect_shuffle, 8), "8 perfect shuffles")
+    print("\n\n")
+    test_randomness(PockerDeck, imperfect_shuffle, "imperfect shuffle")
+    test_randomness(PockerDeck, multiple_shuffles(imperfect_shuffle, 2), "2 imperfect shuffles")
+    test_randomness(PockerDeck, multiple_shuffles(imperfect_shuffle, 3), "3 imperfect shuffles")
+    test_randomness(PockerDeck, multiple_shuffles(imperfect_shuffle, 4), "4 imperfect shuffles")
+    test_randomness(PockerDeck, multiple_shuffles(imperfect_shuffle, 5), "5 imperfect shuffles")
+    test_randomness(PockerDeck, multiple_shuffles(imperfect_shuffle, 6), "6 imperfect shuffles")
+    test_randomness(PockerDeck, multiple_shuffles(imperfect_shuffle, 7), "7 imperfect shuffles")
+    test_randomness(PockerDeck, multiple_shuffles(imperfect_shuffle, 8), "8 imperfect shuffles")
+    print("\n\n")
+    cut_then_shuffle = compose_shuffles(cut, imperfect_shuffle)
+    test_randomness(PockerDeck, cut_then_shuffle, "cut then imperfect shuffle")
+    test_randomness(PockerDeck, multiple_shuffles(cut_then_shuffle, 2), "cut then imperfect shuffle (2)")
+    test_randomness(PockerDeck, multiple_shuffles(cut_then_shuffle, 3), "cut then imperfect shuffle (3)")
+    test_randomness(PockerDeck, multiple_shuffles(cut_then_shuffle, 4), "cut then imperfect shuffle (4)")
+    test_randomness(PockerDeck, multiple_shuffles(cut_then_shuffle, 5), "cut then imperfect shuffle (5)")
+    test_randomness(PockerDeck, multiple_shuffles(cut_then_shuffle, 6), "cut then imperfect shuffle (6)")
+    test_randomness(PockerDeck, multiple_shuffles(cut_then_shuffle, 7), "cut then imperfect shuffle (7)")
+    test_randomness(PockerDeck, multiple_shuffles(cut_then_shuffle, 8), "cut then imperfect shuffle (8)")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
 
 # vim: et sw=4 sts=4

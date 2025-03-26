@@ -1,0 +1,142 @@
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "~3.12"
+scipy = "1.15.2"
+tqdm = "4.67.1"
+
+
+[tool.poetry.group.dev.dependencies]
+ruff = "0.9.6"  # When updating, be sure to also update the version in //bazel/sc/python/ruff.bzl.
+
+[tool.pyright]
+reportUnnecessaryTypeIgnoreComment = "error"
+reportUnnecessaryIsInstance = "error"
+reportIncompatibleMethodOverride = "error"
+reportIncompatibleVariableOverride = "error"
+reportUninitializedInstanceVariable = "error"
+reportMissingTypeArgument = "error"
+reportWildcardImportFromLibrary = "none" # covered by ruff
+
+venvPath = "./"
+venv = ".venv"
+
+include = []
+
+ignore = []
+
+[tool.ruff]
+lint.preview = true
+format.preview = true
+# See https://docs.astral.sh/ruff/rules/ for descriptions of error codes and classes.
+lint.extend-select = [
+    "ANN",
+    "ASYNC",
+    "B",
+    "C",
+    "COM812",
+    "D",
+    "E",
+    "DTZ",
+    "FLY",
+    "G",
+    "I",
+    "ISC",
+    "N",
+    "PERF",
+    "PIE",
+    "PLE",
+    "PLW2901",
+    "PT",
+    "PTH",
+    "Q",
+    "RET",
+    "RUF",
+    "S113",
+    "SIM",
+    "SLF",
+    "TID",
+    "TD",
+    "TRY2",
+    "TRY4",
+    "UP",
+    "W",
+]
+lint.extend-ignore = [
+    "ANN003", # would require type annotation of `**kwargs`
+    "ANN401", # would forbid the use of `Any` annotation
+    "B024", # would forbid abstract base classes without abstract methods
+    "C901", # would forbid highly branched functions
+    "D1", # prefix for all D10[1-9] rules
+    "D417", # would require describing all or no arguments in docstrings
+    "PIE790", # automatically deleting `...` in empty functions that have docstrings
+    "PT018", # would break up compound assertions (assert a and b) in pytest
+    "RET504", # would forbid the `a = foo(); return a` structure
+    "RUF005", # would require [*x, *y, z] instead of x + y + [z]
+    "TD003", # requiring link to issue tracker in TODOs
+]
+extend-exclude = []
+extend-include = ["*.ipynb"]
+lint.isort.known-first-party = []
+lint.isort.split-on-trailing-comma = false
+line-length = 120
+format.line-ending = "auto"
+target-version = "py311"
+
+# ANN201 exemption allows unit tests to be untyped to allow quick-and-dirty helpers and `x_test` without the pesky `-> None`.
+# SLF001 exemption allows test code and utilities to test private members
+lint.per-file-ignores = { "*_test.py" = ["ANN201", "SLF001"], "*_test_helpers.py" = ["SLF001"] }
+lint.pydocstyle.convention = "google"
+lint.flake8-bugbear.extend-immutable-calls = []
+
+[tool.ruff.lint.pep8-naming]
+# Allow Pydantic's `@validator` decorator to trigger class method treatment.
+classmethod-decorators = ["classmethod", "pydantic.validator"]
+
+[tool.pytest.ini_options]
+# Note: When a warning matches more than one option in the list, the action for the _last_ matching option is performed.
+#
+# Individual warning filters are specified as a sequence of fields separated by colons. For example:
+# `action:message:category:module:line`. Reference: https://docs.python.org/3/library/warnings.html#warning-filter.
+#
+# Our policy here says that it is on us if our code directly uses something that iss deprecated, but if a third party
+# uses something that is deprecated, we ignore it.
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    # This is a "protected namespace" warning that pydantic raises when you use `model_` as a prefix for a field name,
+    # which `text_generation` does. That warning is annoying when running tests, so we just ignore it, with some risk
+    # that we will be squelching similar warnings that arise from our own code. We will accept that risk.
+    "ignore::UserWarning:pydantic._internal._fields:128",
+    # This is a warning that pydantic raises if you define a parent abstract class for a set of pydantic models and
+    # then override its properties with model fields.
+    "ignore::UserWarning:pydantic._internal._fields:186",
+    # This is a warning that comes from litellm that is really annoying
+    # (https://github.com/BerriAI/litellm/issues/7560). We don't have this problem in our code, so we're disabling this
+    # error until litellm gets their act together.
+    "ignore::UserWarning:pydantic._internal._config:345",
+]
+markers = [
+    "integration",
+]
+# copy defaults from https://github.com/pytest-dev/pytest/blob/main/src/_pytest/main.py#L188 and add
+# target, bazel-*
+norecursedirs = [
+    "*.egg",
+    ".*", # covers .venv
+    "_darcs",
+    "build",
+    "CVS",
+    "dist",
+    "node_modules",
+    "venv",
+    "target",
+    "bazel-*",
+    "{arch}",
+]
+# TODO(adpauls) is there a difference between specifying here and specifying in norecursedirs?
+addopts = "--ignore-glob \"bazel*\" --ignore .venv"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
